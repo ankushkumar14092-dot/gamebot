@@ -25,7 +25,13 @@ jobs:
           python-version: '3.13'
 
       - name: Install CAMBC CLI
-        run: python -m pip install --upgrade pip cambc==2.2.5
+        run: python -m pip install --upgrade pip cambc==2.2.3
+
+      - name: Configure Git identity (required by candidate branch tests)
+        run: |
+          git config --global user.name "CI Agent"
+          git config --global user.email "ci@localhost"
+          git config --global init.defaultBranch main
 
       - name: Run unit tests
         run: |
@@ -51,13 +57,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/cambc
-          key: cambc-toolchain-v2.2.5-${{ runner.os }}-${{ runner.arch }}
+          key: cambc-toolchain-v2.2.3-${{ runner.os }}-${{ runner.arch }}
 
       - name: Install CAMBC CLI
         run: |
-          python -m pip install --upgrade pip cambc==2.2.5
-          git config user.name "CI Agent"
-          git config user.email "ci@localhost"
+          python -m pip install --upgrade pip cambc==2.2.3
+          git config --global user.name "CI Agent"
+          git config --global user.email "ci@localhost"
+          git config --global init.defaultBranch main
 
       - name: Run acceptance tests
         run: python -m unittest discover -s tests -p "test_*.py" -v
