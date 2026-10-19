@@ -207,6 +207,71 @@ class ImproveBotTests(unittest.TestCase):
                         ["candidate"], cwd=Path.cwd(), capture=True, retry_rate_limits=False)
         self.assertEqual(run.call_count, 1)
 
+    def test_failed_candidate_is_recorded_and_match_is_not_retried(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            cambc = root / ".venv" / "bin" / "cambc"
+            cambc.parent.mkdir(parents=True)
+            cambc.touch()
+            match = {
+                "matchId": "match-1",
+                "status": "finished",
+                "finishedAt": "2026-10-19T04:00:00Z",
+                "map": "ambush",
+                "teams": [
+                    {"teamId": "team-id", "name": "decrest", "side": "a", "result": "loss"},
+                    {"teamId": "opponent-id", "name": "opponent", "side": "b", "result": "win"},
+                ],
+            }
+            candidate_attempts = 0
+
+            def fake_run(command, *, cwd, capture=False, retry_rate_limits=True):
+                nonlocal candidate_attempts
+                self.assertEqual(cwd, root)
+                if "matches" in command and "list" in command:
+                    return json.dumps({"matches": [match]})
+                if "matches" in command and "summary" in command:
+                    stats_path = Path(command[command.index("--output") + 1])
+                    stats_path.parent.mkdir(parents=True, exist_ok=True)
+                    stats_path.write_text('{"match": {}}', encoding="utf-8")
+                    return ""
+                if "review_match.py" in command[1]:
+                    return "review completed"
+                if "improve_bot.py" in command[1]:
+                    self.assertTrue(capture)
+                    self.assertFalse(retry_rate_limits)
+                    candidate_attempts += 1
+                    raise subprocess.CalledProcessError(
+                        2, command, output="candidate failed",
+                        stderr="HTTP 429; GEMINI_API_KEY=test-secret",
+                    )
+                self.fail(f"unexpected command: {command}")
+
+            argv = ["sync_online_matches.py", "--team-id", "team-id", "--team-name", "decrest",
+                    "--stats-only", "--root", "reviews"]
+            with patch("pathlib.Path.cwd", return_value=root):
+                with patch.object(sys, "argv", argv):
+                    with patch.object(sync_online_matches, "run", side_effect=fake_run):
+                        with patch.dict(os.environ, {"GEMINI_API_KEY": "test-secret"}):
+                            with contextlib.redirect_stderr(io.StringIO()):
+                                self.assertEqual(sync_online_matches.main(), 2)
+
+                            state_path = root / "reviews" / "state.json"
+                            state = json.loads(state_path.read_text(encoding="utf-8"))
+                            record = state["processed"]["match-1"]
+                            self.assertEqual(record["candidateExperiment"]["status"], "failed")
+                            self.assertEqual(record["candidateExperiment"]["returncode"], 2)
+                            log_path = Path(record["candidateExperiment"]["log"])
+                            log_text = log_path.read_text(encoding="utf-8")
+                            self.assertIn("HTTP 429", log_text)
+                            self.assertNotIn("test-secret", log_text)
+                            self.assertIn("[redacted]", log_text)
+
+                            with patch.object(sys, "argv", argv):
+                                with contextlib.redirect_stdout(io.StringIO()):
+                                    self.assertEqual(sync_online_matches.main(), 0)
+            self.assertEqual(candidate_attempts, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -32,10 +32,10 @@ def run(command: list[str], *, cwd: Path, capture: bool = False,
                                     stdout=subprocess.PIPE if capture else None,
                                     stderr=subprocess.PIPE)
             if result.stderr:
-                sys.stderr.write(result.stderr)
+                sys.stderr.write(redact_output(result.stderr))
             return result.stdout if capture else ""
         except subprocess.CalledProcessError as exc:
-            error = exc.stderr or ""
+            error = redact_output(exc.stderr or "")
             retryable = (retry_rate_limits
                          and ("rate limit" in error.casefold() or "http 429" in error.casefold()))
             if not retryable or attempt == 7:
@@ -48,6 +48,47 @@ def run(command: list[str], *, cwd: Path, capture: bool = False,
                   file=sys.stderr, flush=True)
             time.sleep(delay)
     return ""
+
+
+def redact_output(text: str) -> str:
+    redacted = text
+    for key in ("GEMINI_API_KEY", "FIREWORKS_API_KEY", "CAMBC_API_KEY"):
+        secret = os.environ.get(key)
+        if secret:
+            redacted = redacted.replace(secret, "[redacted]")
+    return re.sub(
+        r"(?i)(\b[A-Z0-9_]*(?:API_KEY|TOKEN|SECRET)\s*[:=]\s*)[^\s,;]+",
+        r"\1[redacted]",
+        redacted,
+    )
+
+
+def record_candidate_experiment(command: list[str], *, cwd: Path, folder: Path) -> dict[str, Any]:
+    log_path = folder / "experiment.txt"
+    try:
+        stdout = run(command, cwd=cwd, capture=True, retry_rate_limits=False)
+    except subprocess.CalledProcessError as exc:
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        result = {"status": "failed", "returncode": exc.returncode}
+    except OSError as exc:
+        stdout = ""
+        stderr = f"{type(exc).__name__}: {exc}"
+        result = {"status": "failed", "returncode": None}
+    else:
+        stderr = ""
+        result = {"status": "completed", "returncode": 0}
+
+    log = ["# Candidate experiment", "", f"- Status: {result['status']}",
+           f"- Exit code: {result['returncode']}", "", "## Output", "",
+           redact_output(stdout).rstrip() or "(no stdout)"]
+    if stderr.strip():
+        log.extend(["", "## Error output", "", redact_output(stderr).rstrip()])
+    log_path.write_text("\n".join(log) + "\n", encoding="utf-8")
+    result["log"] = str(log_path)
+    if result["status"] == "failed":
+        print(f"Candidate experiment failed for this match; details: {log_path}", file=sys.stderr)
+    return result
 
 
 def main() -> int:
@@ -133,6 +174,7 @@ def main() -> int:
               f"{args.team_name} ({known_team_id}); {len(todo)} new.")
 
         experiments_started = 0
+        experiment_failures = 0
         for match, ours in todo:
             match_id = str(match["matchId"])
             folder = output_root / match_id
@@ -165,7 +207,7 @@ def main() -> int:
                   f"{next((t.get('name', 'unknown') for t in match.get('teams', []) if t is not ours), 'unknown')} "
                   f"| {report_path}")
 
-            experiment_note = ""
+            experiment_result: dict[str, Any] | None = None
             if (result == "loss" and not args.no_experiments
                     and experiments_started < args.max_experiments):
                 improve_command = [sys.executable, "tools/improve_bot.py", str(stats_path),
@@ -173,12 +215,11 @@ def main() -> int:
                 map_path = root / "maps" / f"{match.get('map', '')}.map26a"
                 if map_path.is_file():
                     improve_command += ["--maps", str(map_path)]
-                improve = run(improve_command, cwd=root, capture=True, retry_rate_limits=False)
                 experiments_started += 1
-                experiment_note = improve.strip()
-                if experiment_note:
-                    (folder / "experiment.txt").write_text(experiment_note + "\n", encoding="utf-8")
-                    print(experiment_note)
+                experiment_result = record_candidate_experiment(
+                    improve_command, cwd=root, folder=folder)
+                if experiment_result["status"] == "failed":
+                    experiment_failures += 1
             elif result == "loss" and not args.no_experiments:
                 print(f"Candidate experiment limit reached ({args.max_experiments}); "
                       f"reviewed {match_id} without generating another candidate.")
@@ -188,13 +229,18 @@ def main() -> int:
                                    "finishedAt": match.get("finishedAt"), "map": match.get("map"),
                                    "side": side, "opponent": opponent.get("name", "unknown"),
                                    "characters": ours.get("characters", []),
-                                   "review": str(report_path), "replayDownloaded": replay_ok}
+                                   "review": str(report_path), "replayDownloaded": replay_ok,
+                                   "candidateExperiment": experiment_result}
             state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
         if not selected:
             print("No finished matches found for that team. Check --team-name or --team-id.")
         elif not todo:
             print("No new finished matches to review.")
+        if experiment_failures:
+            print(f"{experiment_failures} candidate experiment(s) failed; failures were recorded and will not "
+                  "be retried automatically for the same match.", file=sys.stderr)
+            return 2
     except (OSError, ValueError, json.JSONDecodeError, subprocess.CalledProcessError) as exc:
         print(f"sync_online_matches: {exc}", file=sys.stderr)
         return 2

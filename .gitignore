@@ -11,4 +11,6 @@ replays/
 bots/*/build/
 bots/*/target/
 .DS_Store
+bots/experiments/auto/
+
 

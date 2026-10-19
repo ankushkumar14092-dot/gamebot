@@ -78,7 +78,10 @@ Candidate generation and benchmarking never modify the incumbent source or
 submit to the platform. A passing result is only eligible for human review;
 package and submit it manually after explicit approval. If Gemini cannot
 justify a safe fix or the candidate fails to build or pass the gate, the
-incumbent stays unchanged. Use `--kind` to sync unranked or tournament matches.
+incumbent stays unchanged. Candidate command failures are written to that
+match's `experiment.txt`, recorded in sync state, and reported with a nonzero
+exit status; the failed loss is not retried automatically on every poll. Use
+`--kind` to sync unranked or tournament matches.
 
 CAMBC login stores a short-lived CLI session locally (seven days); it does not
 need a username/password in `.env`. Run `cambc login` again when the session

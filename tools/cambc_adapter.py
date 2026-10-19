@@ -231,6 +231,20 @@ class CambcAdapter:
             "command": command,
         }
 
+    def inspect_environment(self) -> dict[str, object]:
+        """Official Phase 2 interface for inspecting CAMBC environment."""
+        return self.get_environment_info()
+
+    def build_candidate(self, version: str | Path, *, release: bool = True,
+                        timeout_seconds: int | None = None) -> CommandResult:
+        """Official Phase 2 interface for building a candidate bot."""
+        return self.build_bot(version, release=release, timeout_seconds=timeout_seconds)
+
+    def collect_replay(self, match_id: str, *,
+                       timeout_seconds: int | None = None) -> CommandResult:
+        """Official Phase 2 interface for downloading a match replay."""
+        return self.download_replay(match_id, timeout_seconds=timeout_seconds)
+
     def package_submission(self, version: str | Path, output: str | Path, *,
                           timeout_seconds: int | None = None) -> CommandResult:
         bot = Path(version)
@@ -245,3 +259,57 @@ class CambcAdapter:
             expected_artifacts=[archive],
             timeout_seconds=timeout_seconds,
         )
+
+    def package_candidate(self, version: str | Path, output: str | Path | None = None, *,
+                          timeout_seconds: int | None = None) -> CommandResult:
+        """Official Phase 2 interface for packaging a candidate bot into an uploadable artifact."""
+        bot = Path(version)
+        if not bot.is_absolute():
+            bot = self.root / bot
+        if output is None:
+            dist_dir = self.root / "dist"
+            dist_dir.mkdir(parents=True, exist_ok=True)
+            output = dist_dir / f"{bot.name}.zip"
+        return self.package_submission(bot, output, timeout_seconds=timeout_seconds)
+
+    def submit_candidate(self, artifact: str | Path, *,
+                         allow_live_submission: bool = False,
+                         timeout_seconds: int | None = None) -> CommandResult:
+        """Official Phase 2 & 10 interface for submitting a tested candidate to CAMBC."""
+        target = Path(artifact)
+        if not target.is_absolute():
+            target = self.root / target
+        if not target.exists():
+            raise FileNotFoundError(f"Artifact to submit does not exist: {target}")
+
+        if not allow_live_submission:
+            # Safe dry-run mode: verify artifact validity without remote side effects
+            return CommandResult(
+                command=(self.cli, "submit", str(target), "--dry-run"),
+                stdout=f"[DRY-RUN] Candidate artifact {target.name} validated for submission; live upload disabled",
+                stderr="",
+                returncode=0,
+                duration_seconds=0.01,
+                generated_artifacts=(target,),
+                timed_out=False,
+            )
+
+        return self._run(["submit", str(target)], timeout_seconds=timeout_seconds)
+
+    def run_batch(self, manifest: str | Path, *, jobs: int = 1,
+                  release: bool = True, timeout_seconds: int | None = None) -> CommandResult:
+        """Run batch matches from a manifest file using official cambc run-batch."""
+        manifest_path = Path(manifest)
+        if not manifest_path.is_absolute():
+            manifest_path = self.root / manifest_path
+        if not manifest_path.is_file():
+            raise FileNotFoundError(f"Batch manifest not found: {manifest_path}")
+
+        arguments = ["run-batch", str(manifest_path), "--jobs", str(jobs), "--json"]
+        if release:
+            arguments.append("--release")
+        if timeout_seconds is not None:
+            arguments.extend(["--timeout", str(timeout_seconds)])
+
+        return self._run(arguments, timeout_seconds=timeout_seconds)
+

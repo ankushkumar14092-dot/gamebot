@@ -1,0 +1,29 @@
+{
+  "best_known_version": "submission-v6",
+  "best_known_commit": "3c0c6cf1755f1e6e6ae28d4b8f98be57e11ffa1d",
+  "versions": {
+    "submission-v6": {
+      "version_id": "submission-v6",
+      "git_commit": "3c0c6cf1755f1e6e6ae28d4b8f98be57e11ffa1d",
+      "artifact_checksum": "233c7ed29deb56248c73c6b41e822446d770c32f0c27f3cf150ecca5f496a822",
+      "build_status": "success",
+      "regression_results": {},
+      "evaluation_metrics": {},
+      "runtime_error_counts": 0,
+      "fuel_usage": 0,
+      "changes_introduced": "Repository baseline incumbent bot",
+      "promotion_decision": "promoted",
+      "rejection_reason": null,
+      "submission_id": null,
+      "push_status": {},
+      "timestamp": "2026-10-19T05:17:02.362256+00:00"
+    }
+  },
+  "history": [
+    {
+      "version_id": "submission-v6",
+      "decision": "incumbent",
+      "timestamp": "2026-10-19T05:17:02.362256+00:00"
+    }
+  ]
+}

@@ -56,7 +56,7 @@ Audit date: 2026-10-19
 - A deliberately syntax-broken candidate failed compilation in a temporary
   isolated copy; the incumbent source hash remained unchanged. No promotion
   or submission path was invoked.
-- The 20 focused Python unit tests cover CLI adapter capture/redaction/timeouts,
+- The 21 focused Python unit tests cover CLI adapter capture/redaction/timeouts,
   candidate branch isolation, failed-build artifacts, report rendering, and
   bounded Gemini retry behavior. Retry tests simulate `Retry-After` and Gemini
   `retryDelay` responses.
@@ -102,3 +102,22 @@ Audit date: 2026-10-19
   file is also discovered inside its output directory.
 - Fixed report rendering when Gemini returns a single evidence string instead
   of a list, and documented the verified CLI behavior and limitations.
+
+## Follow-up verification
+
+- The current `gamebot` directory is its own Git repository on `main`, but it
+  has no commits and no configured remote. The source files are untracked, so
+  committing/pushing a promotion would require an explicitly configured
+  repository and branch; no push was attempted.
+- A candidate attempt that failed with Gemini HTTP 429 left its match out of
+  `matches/online-reviews/state.json`, so the poller would retry that same
+  loss on each sync. Sync now writes candidate stdout/stderr to the match's
+  `experiment.txt`, redacts key-shaped values and known API-key values, records
+  failed attempt status in state, and returns a nonzero status. That processed
+  match is not automatically re-experimented on every poll.
+- The added regression test exercises a complete simulated match sync: a
+  candidate failure is captured, the API key is redacted, the match is marked
+  processed, and a second sync does not repeat the failed attempt.
+- Submission integration remains disabled: CAMBC help confirms `bundle` and
+  `submit` command shapes, but no safe end-to-end upload test or server-side
+  accepted submission ID has been performed.
