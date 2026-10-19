@@ -29,11 +29,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          python -m unittest \
-            tests/test_cambc_adapter.py \
-            tests/test_improve_bot.py \
-            tests/test_gemini_retry.py \
-            tests/test_agent_reports.py
+          python -m unittest discover -s tests -p "test_*.py" -v
 
   acceptance-tests:
     name: Acceptance Tests (12 Criteria)
@@ -64,7 +60,7 @@ jobs:
           git config user.email "ci@localhost"
 
       - name: Run acceptance tests
-        run: python -m unittest tests/test_autonomous_system.py
+        run: python -m unittest discover -s tests -p "test_*.py" -v
 
   docker-build:
     name: Docker Image Build Verification

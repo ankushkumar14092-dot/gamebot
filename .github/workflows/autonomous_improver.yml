@@ -91,7 +91,7 @@ jobs:
 
       - name: Run Pre-Flight Regression Tests
         run: |
-          python -m unittest tests/test_cambc_adapter.py tests/test_improve_bot.py tests/test_gemini_retry.py tests/test_agent_reports.py
+          python -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Execute Autonomous Improvement Cycle
         env:
@@ -127,7 +127,7 @@ jobs:
 
       - name: Run Full Acceptance Suite
         run: |
-          python -m unittest tests/test_autonomous_system.py
+          python -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Commit and Push Validated State to GitHub
         run: |
