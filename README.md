@@ -56,25 +56,67 @@ The **CAMBC GameBot Improvement Agent** transforms competitive bot programming i
 
 ```mermaid
 flowchart TD
-    A[🎮 CAMBC Platform / Match Runner] -->|Fetch Replays & Statistics| B[🔍 Match Analyzer & Diagnostic Auditor]
-    B -->|Detect Loss Patterns & Gem Drops| C{Hypothesis Formed?}
-    C -->|Yes| D[🧠 LLM Strategy & Patch Synthesizer<br/><i>Gemini 2.5 Flash / Fireworks</i>]
-    C -->|No / Safe| Z[⏳ Wait for Next Cycle]
-    
-    D -->|Generate Scoped C++ Diff| E[🌿 Isolated Git Candidate Branch]
-    E -->|wasi-sdk / CMake / Ninja| F[🔨 WASM Compilation Engine]
-    
-    F -->|Compile Error| G[❌ Register Failure in Ledger]
-    F -->|Build Succeeded| H[🧪 Pre-Flight Unit & Regression Suite]
-    
-    H -->|Regression Detected| G
-    H -->|Tests Passed| I[⚖️ Paired Quantitative Benchmark<br/><i>Incumbent vs Candidate (Both Sides)</i>]
-    
-    I --> J{Outperforms Incumbent?<br/><i>+Gems & Wins & Zero Faults</i>}
-    J -->|No| G
-    J -->|Yes| K[🏆 Promote to Best Version Registry]
-    K --> L[🚀 Optional Verified Platform Submission]
-    K --> M[📦 Artifact & Replay Cloud Storage]
+    classDef platform fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef analysis fill:#1e1e38,stroke:#818cf8,stroke-width:2px,color:#f8fafc;
+    classDef ai fill:#311042,stroke:#c084fc,stroke-width:2px,color:#f8fafc;
+    classDef sandbox fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f8fafc;
+    classDef gate fill:#78350f,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
+    classDef registry fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#f8fafc;
+    classDef reject fill:#7f1d1d,stroke:#ef4444,stroke-width:2px,color:#f8fafc;
+
+    subgraph Ingestion["📡 1. Ingestion & Telemetry"]
+        CAMBC["Official CAMBC Competition Platform"]:::platform
+        Replays["Replay Bundles (*.repl26a)<br/>& Statistics JSON"]:::platform
+        CAMBC -->|Sync Matches| Replays
+    end
+
+    subgraph Diagnosis["🔍 2. Diagnostic & Loss Analysis"]
+        Audit["Diagnostic Auditor<br/>(Death Tracker & Gem Drop Analysis)"]:::analysis
+        Hypothesis{"Loss Pattern<br/>Identified?"}:::analysis
+        Replays --> Audit
+        Audit --> Hypothesis
+    end
+
+    subgraph Intelligence["🧠 3. Tactical LLM Synthesis"]
+        LLM["Gemini 2.5 Flash / Fireworks AI<br/>(Bounded Backoff & Retry)"]:::ai
+        Diff["Scoped Algorithmic Patch<br/>(bot.cpp / draft.cpp)"]:::ai
+        Hypothesis -->|Yes| LLM
+        LLM --> Diff
+    end
+
+    subgraph Sandbox["🌿 4. Isolated Candidate Sandbox"]
+        Worktree["Isolated Git Candidate Branch<br/>(Incumbent Untouched)"]:::sandbox
+        Build["WASM Compilation Engine<br/>(wasi-sdk + CMake + Ninja)"]:::sandbox
+        PreFlight["Pre-Flight Unit Tests<br/>(Adapter, Reports, Security)"]:::sandbox
+        
+        Diff --> Worktree
+        Worktree --> Build
+        Build -->|Success| PreFlight
+    end
+
+    subgraph Gate["⚖️ 5. Paired Quantitative Benchmark"]
+        Benchmark["Symmetric Mirror Matches<br/>(Sides A & B vs Opponent)"]:::gate
+        Criteria{"Strict Gate Invariants<br/>1. Net Gem Delta > 0<br/>2. Wins >= Incumbent<br/>3. Bot Faults == 0"}:::gate
+        
+        PreFlight -->|Pass| Benchmark
+        Benchmark --> Criteria
+    end
+
+    subgraph Outcome["🏆 6. Promotion & Ledger"]
+        Registry[("best_version_registry.json<br/>(SHA-256 Checksum Ledger)")]:::registry
+        GitCommit["Atomic Git Commit & Push<br/>to main branch"]:::registry
+        CloudArtifacts["Upload Match Replays<br/>to GitHub Artifacts"]:::registry
+        Rejected["Register Candidate as Rejected<br/>(State Saved in Ledger)"]:::reject
+        
+        Criteria -->|All Criteria Met| Registry
+        Registry --> GitCommit
+        Registry --> CloudArtifacts
+        
+        Build -->|Compile Error| Rejected
+        PreFlight -->|Test Failure| Rejected
+        Criteria -->|Regression Detected| Rejected
+        Hypothesis -->|No Clear Hypothesis| Standby["Standby for Next Cycle"]:::analysis
+    end
 ```
 
 ---
@@ -132,6 +174,38 @@ python -m unittest tests/test_cambc_adapter.py \
 ## ☁️ Cloud Deployment
 
 The repository includes a production-ready, persistent GitHub Actions workflow that executes autonomous improvement loops independently.
+
+```mermaid
+graph LR
+    classDef cloud fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef runner fill:#1e1e38,stroke:#818cf8,stroke-width:2px,color:#f8fafc;
+    classDef ai fill:#311042,stroke:#c084fc,stroke-width:2px,color:#f8fafc;
+    classDef storage fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#f8fafc;
+    classDef external fill:#374151,stroke:#9ca3af,stroke-width:2px,color:#f8fafc;
+
+    subgraph Cloud["☁️ GitHub Cloud Infrastructure"]
+        Scheduler["⏰ Cloud Trigger<br/>(Cron 0 */3 * * * or Manual Dispatch)"]:::cloud
+        Runner["🖥️ GitHub-Hosted Runner<br/>(Ubuntu 24.04 x86_64)"]:::runner
+        ToolchainCache[("💾 Toolchain Cache<br/>(wasi-sdk, cmake, ninja, pip)")]:::storage
+        ArtifactStorage[("📦 GitHub Artifacts<br/>(Replays & Evaluation Logs)")]:::storage
+        GitRepo[("📂 Git Repository<br/>(ankushkumar14092-dot/gamebot)")]:::storage
+
+        Scheduler -->|Trigger Job| Runner
+        Runner <-->|Restore / Save Cache| ToolchainCache
+        Runner -->|Push Validated Commits| GitRepo
+        Runner -->|Upload Bundles| ArtifactStorage
+    end
+
+    subgraph ExternalServices["🌐 External Services & APIs"]
+        Gemini["✨ Google Gemini API<br/>(gemini-2.5-flash)"]:::ai
+        Fireworks["🎆 Fireworks AI API<br/>(LLaMA 3.3 70B)"]:::ai
+        CAMBC["🎮 Cambridge Battlecode<br/>Platform & CLI"]:::external
+
+        Runner <-->|Prompt & Diff Synthesis| Gemini
+        Runner <-->|Alternative Reasoning| Fireworks
+        Runner <-->|Sync Matches & Replays| CAMBC
+    end
+```
 
 ### 1. Automated Execution via GitHub Actions
 
@@ -231,10 +305,28 @@ To immediately halt any running local agent, background worker, or cloud workflo
 touch EMERGENCY_STOP
 ```
 
-The loop continuously checks for this sentinel file before and after every critical phase. Upon detection, it will:
-1. Safely terminate ongoing sub-processes.
-2. Preserve current git state without committing unfinished work.
-3. Exit cleanly with return code `130`.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as 👤 Operator
+    participant Agent as 🤖 Autonomous Loop
+    participant Sentinel as 📄 EMERGENCY_STOP File
+    participant Subprocess as ⚙️ Active Match / Compiler
+    participant Git as 🌿 Git Candidate State
+
+    Note over Agent: Continuous Phase Gate Check
+    Agent->>Sentinel: Check file existence (matches/EMERGENCY_STOP)
+    alt Sentinel Not Found (Normal Operation)
+        Sentinel-->>Agent: Proceed
+        Agent->>Subprocess: Execute benchmark or LLM candidate cycle
+    else Sentinel Detected (Killswitch Engaged)
+        Dev->>Sentinel: touch EMERGENCY_STOP
+        Sentinel-->>Agent: Stop sentinel detected!
+        Agent->>Subprocess: Send SIGTERM to running worker processes
+        Agent->>Git: Clean uncommitted scratch worktrees safely
+        Agent-->>Dev: Gracefully exit loop with Return Code 130
+    end
+```
 
 To resume normal operations, simply remove the file:
 ```bash
