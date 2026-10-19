@@ -1,0 +1,247 @@
+"""Small, testable adapter for the installed CAMBC command-line interface."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Sequence
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    command: tuple[str, ...]
+    stdout: str
+    stderr: str
+    returncode: int | None
+    duration_seconds: float
+    generated_artifacts: tuple[Path, ...]
+    timed_out: bool = False
+
+
+class CambcAdapter:
+    def __init__(self, root: Path = ROOT, timeout_seconds: int = 300):
+        self.root = root.resolve()
+        local_cli = self.root / ".venv" / "bin" / "cambc"
+        cli = local_cli if local_cli.is_file() else shutil.which("cambc")
+        if not cli:
+            raise FileNotFoundError("CAMBC CLI not found in .venv/bin or PATH")
+        if timeout_seconds < 1:
+            raise ValueError("timeout_seconds must be positive")
+        self.cli = str(cli)
+        self.timeout_seconds = timeout_seconds
+
+    @staticmethod
+    def _redact(text: str) -> str:
+        result = re.sub(
+            r"(?i)(\b(?:GEMINI|FIREWORKS)_API_KEY\s*[:=]\s*)[^\s,;]+",
+            r"\1[redacted]",
+            text,
+        )
+        for key in ("GEMINI_API_KEY", "FIREWORKS_API_KEY"):
+            secret = os.environ.get(key)
+            if secret:
+                result = result.replace(secret, "[redacted]")
+        return result
+
+    @staticmethod
+    def _text(value: str | bytes | None) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return value
+
+    def _run(self, arguments: Sequence[str], *,
+             expected_artifacts: Sequence[Path] = (),
+             timeout_seconds: int | None = None) -> CommandResult:
+        command = (self.cli, *map(str, arguments))
+        if timeout_seconds is not None and timeout_seconds < 1:
+            raise ValueError("timeout_seconds must be positive")
+        timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds
+        previous_artifacts: dict[Path, tuple[int, int]] = {}
+        for artifact in expected_artifacts:
+            candidates = [artifact] if artifact.is_file() else (
+                list(artifact.iterdir()) if artifact.is_dir() else []
+            )
+            for candidate in candidates:
+                if candidate.is_file():
+                    stat = candidate.stat()
+                    previous_artifacts[candidate.resolve()] = (stat.st_mtime_ns, stat.st_size)
+        started = time.monotonic()
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+            stdout = completed.stdout
+            stderr = completed.stderr
+            returncode: int | None = completed.returncode
+            timed_out = False
+        except subprocess.TimeoutExpired as exc:
+            stdout = self._text(exc.stdout)
+            stderr = self._text(exc.stderr)
+            returncode = None
+            timed_out = True
+        artifacts: list[Path] = []
+        seen_artifacts: set[Path] = set()
+        for artifact in expected_artifacts:
+            if artifact.is_file():
+                candidates = [artifact]
+            elif artifact.is_dir():
+                candidates = sorted(item for item in artifact.iterdir() if item.is_file())
+            else:
+                candidates = []
+            for candidate in candidates:
+                resolved = candidate.resolve()
+                if resolved in seen_artifacts:
+                    continue
+                seen_artifacts.add(resolved)
+                if returncode == 0 and not timed_out:
+                    artifacts.append(resolved)
+                else:
+                    stat = candidate.stat()
+                    if previous_artifacts.get(resolved) != (stat.st_mtime_ns, stat.st_size):
+                        artifacts.append(resolved)
+        return CommandResult(
+            command=command,
+            stdout=self._redact(stdout),
+            stderr=self._redact(stderr),
+            returncode=returncode,
+            duration_seconds=time.monotonic() - started,
+            generated_artifacts=tuple(artifacts),
+            timed_out=timed_out,
+        )
+
+    def get_environment_info(self) -> dict[str, object]:
+        version = self._run(["--version"])
+        help_result = self._run(["--help"])
+        config_path = self.root / "cambc.toml"
+        sdk_version = None
+        if config_path.is_file():
+            match = re.search(r'(?m)^\s*sdk_version\s*=\s*"([^"]+)"', config_path.read_text())
+            sdk_version = match.group(1) if match else None
+        return {
+            "cli_version": version.stdout.strip() if version.returncode == 0 else None,
+            "sdk_version": sdk_version,
+            "cli_available": version.returncode == 0,
+            "top_level_help": help_result.stdout,
+            "commands": {
+                "version": version,
+                "help": help_result,
+            },
+        }
+
+    def build_bot(self, version: str | Path, *, release: bool = True,
+                  timeout_seconds: int | None = None) -> CommandResult:
+        bot = Path(version)
+        if not bot.is_absolute():
+            bot = self.root / bot
+        build_dir = bot / ".cambc" / ("build-release" if release else "build")
+        arguments = ["build", str(bot)]
+        if release:
+            arguments.append("--release")
+        return self._run(arguments, expected_artifacts=[build_dir / "bot.wasm"],
+                         timeout_seconds=timeout_seconds)
+
+    def run_match(self, bot_a: str | Path, bot_b: str | Path, map_path: str | Path, *,
+                  seed: int | None = None, rounds: int | None = None,
+                  fuel: int | None = None, release: bool = True,
+                  timeout_seconds: int | None = None) -> CommandResult:
+        if seed is not None:
+            raise ValueError("Installed CAMBC run/run-batch help does not expose a seed option")
+        run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        output_dir = self.root / "matches" / "local" / run_id
+        output_dir.mkdir(parents=True, exist_ok=False)
+        statistics = output_dir / "statistics.json"
+        arguments = [
+            "run", str(bot_a), str(bot_b), "--map", str(map_path),
+            "--out-dir", str(output_dir), "--statistics", str(statistics), "--json",
+        ]
+        if release:
+            arguments.append("--release")
+        if rounds is not None:
+            if rounds < 1:
+                raise ValueError("rounds must be positive")
+            arguments.extend(["--rounds", str(rounds)])
+        if fuel is not None:
+            if fuel < 1:
+                raise ValueError("fuel must be positive")
+            arguments.extend(["--fuel", str(fuel)])
+        return self._run(arguments, expected_artifacts=[statistics, output_dir],
+                         timeout_seconds=timeout_seconds)
+
+    def collect_match_results(self, match_id: str, *,
+                              timeout_seconds: int | None = None) -> tuple[dict, CommandResult]:
+        if not re.fullmatch(r"[A-Za-z0-9-]+", match_id):
+            raise ValueError("match_id may contain only letters, digits, and hyphens")
+        output_dir = self.root / "matches" / "cambc-adapter" / match_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+        statistics = output_dir / "statistics.json"
+        command = self._run(
+            ["matches", "summary", match_id, "--json", "--output", str(statistics)],
+            expected_artifacts=[statistics],
+            timeout_seconds=timeout_seconds,
+        )
+        if command.timed_out:
+            raise TimeoutError(f"CAMBC summary timed out for match {match_id}")
+        if command.returncode != 0:
+            raise RuntimeError(f"CAMBC summary failed for match {match_id} (exit {command.returncode})")
+        try:
+            data = json.loads(statistics.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError(f"CAMBC returned malformed statistics for match {match_id}") from exc
+        if not isinstance(data, dict):
+            raise ValueError(f"CAMBC statistics for match {match_id} must be a JSON object")
+        return data, command
+
+    def download_replay(self, match_id: str, *,
+                        timeout_seconds: int | None = None) -> CommandResult:
+        if not re.fullmatch(r"[A-Za-z0-9-]+", match_id):
+            raise ValueError("match_id may contain only letters, digits, and hyphens")
+        output_dir = self.root / "matches" / "cambc-adapter" / match_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+        replay = output_dir / "replay.repl26a"
+        return self._run(
+            ["matches", "download", match_id, "--output", str(replay)],
+            expected_artifacts=[replay],
+            timeout_seconds=timeout_seconds,
+        )
+
+    def collect_diagnostics(self, match_id: str, *,
+                            timeout_seconds: int | None = None) -> dict[str, object]:
+        statistics, command = self.collect_match_results(match_id, timeout_seconds=timeout_seconds)
+        diagnostics = statistics.get("diagnostics")
+        return {
+            "available": isinstance(diagnostics, dict),
+            "diagnostics": diagnostics if isinstance(diagnostics, dict) else None,
+            "bot_faults": diagnostics.get("botFaults") if isinstance(diagnostics, dict) else None,
+            "command": command,
+        }
+
+    def package_submission(self, version: str | Path, output: str | Path, *,
+                          timeout_seconds: int | None = None) -> CommandResult:
+        bot = Path(version)
+        if not bot.is_absolute():
+            bot = self.root / bot
+        archive = Path(output)
+        if not archive.is_absolute():
+            archive = self.root / archive
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        return self._run(
+            ["bundle", str(bot), "--output", str(archive)],
+            expected_artifacts=[archive],
+            timeout_seconds=timeout_seconds,
+        )

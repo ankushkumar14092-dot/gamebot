@@ -1,0 +1,38 @@
+services:
+  match-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+    image: cambc-fireworks-match-agent:local
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    env_file:
+      - .env
+    environment:
+      HOME: /home/cambc
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
+      CAMBC_TEAM_ID: ${CAMBC_TEAM_ID:-432f7d69-cce1-48c4-a446-2b293aa210b9}
+      CAMBC_TEAM_NAME: ${CAMBC_TEAM_NAME:-decrest}
+      CAMBC_KIND: ${CAMBC_KIND:-ranked}
+      CAMBC_LIMIT: ${CAMBC_LIMIT:-10}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-300}
+      GEMINI_MAX_TOKENS: ${GEMINI_MAX_TOKENS:-8000}
+    volumes:
+      - ./matches:/app/matches
+      - cambc-home:/home/cambc
+      - cambc-workspace:/app/.cambc
+    user: "${PUID:-1000}:${PGID:-1000}"
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  cambc-home:
+  cambc-workspace:

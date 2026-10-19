@@ -1,0 +1,14 @@
+.cambc/
+.venv/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+bots/*/.cambc/
+matches/
+replays/
+bots/*/build/
+bots/*/target/
+.DS_Store
+

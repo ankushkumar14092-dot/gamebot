@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.venv
+.cambc
+**/.cambc
+**/build
+**/target
+matches
+replays
+dist
+.DS_Store
+__pycache__
+*.py[cod]
