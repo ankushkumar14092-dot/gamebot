@@ -22,16 +22,24 @@ services:
       CAMBC_LIMIT: ${CAMBC_LIMIT:-10}
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-300}
       GEMINI_MAX_TOKENS: ${GEMINI_MAX_TOKENS:-8000}
+      ALLOW_LIVE_SUBMISSION: ${ALLOW_LIVE_SUBMISSION:-false}
     volumes:
       - ./matches:/app/matches
+      - ./dist:/app/dist
       - cambc-home:/home/cambc
       - cambc-workspace:/app/.cambc
     user: "${PUID:-1000}:${PGID:-1000}"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; from pathlib import Path; sys.exit(1 if Path('/app/matches/EMERGENCY_STOP').is_file() else 0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     logging:
       driver: json-file
       options:
         max-size: 10m
         max-file: "3"
+
 
 volumes:
   cambc-home:

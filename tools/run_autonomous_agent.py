@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -15,8 +17,34 @@ if str(ROOT) not in sys.path:
 
 from tools.autonomous_improver import AutonomousImprover
 from tools.best_version_registry import BestVersionRegistry
-from tools.cambc_adapter import CambcAdapter
 from tools.match_analyzer import extract_match_metrics, generate_structured_report
+
+EMERGENCY_STOP_FILES = [
+    ROOT / "EMERGENCY_STOP",
+    ROOT / "matches" / "EMERGENCY_STOP",
+]
+_stop_requested = False
+
+
+def _handle_sigterm(signum: int, frame: object) -> None:  # noqa: ARG001
+    global _stop_requested
+    print("\n[SIGNAL] SIGTERM/SIGINT received — completing current cycle then stopping.", flush=True)
+    _stop_requested = True
+
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
+signal.signal(signal.SIGINT, _handle_sigterm)
+
+
+def check_emergency_stop() -> bool:
+    """Return True if an emergency stop file exists or SIGTERM was received."""
+    if _stop_requested:
+        return True
+    for stop_file in EMERGENCY_STOP_FILES:
+        if stop_file.is_file():
+            print(f"[EMERGENCY STOP] Stop file detected: {stop_file} — halting loop.", flush=True)
+            return True
+    return False
 
 
 
@@ -42,23 +70,38 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    # Honour environment variable for live submission (used in Docker / CI)
+    allow_live = args.allow_live_submission or (
+        os.environ.get("ALLOW_LIVE_SUBMISSION", "").lower() in ("1", "true", "yes")
+    )
     improver = AutonomousImprover(
         max_candidates_per_cycle=args.max_candidates,
         benchmark_rounds=args.rounds,
-        allow_live_submission=args.allow_live_submission,
+        allow_live_submission=allow_live,
     )
 
     cycles = args.cycles
     interval = args.interval
-    print(f"Starting {cycles} autonomous improvement cycle(s) (interval: {interval}s)...")
+    print(f"Starting {cycles} autonomous improvement cycle(s) (interval: {interval}s, live_submission={allow_live})...",
+          flush=True)
 
     for i in range(cycles):
-        print(f"\n>>> Cycle {i + 1}/{cycles} <<<")
-        result = improver.run_cycle(map_name=args.map)
-        print(f"Cycle outcome: {result.get('status')}")
+        if check_emergency_stop():
+            print(f"[STOP] Emergency stop at cycle {i + 1}/{cycles}.", flush=True)
+            return 130  # SIGINT exit code convention
 
-        if i + 1 < cycles:
-            print(f"Waiting {interval} seconds before next cycle...")
+        print(f"\n>>> Cycle {i + 1}/{cycles} <<<", flush=True)
+        try:
+            result = improver.run_cycle(map_name=args.map)
+            status = result.get('status', 'unknown')
+            print(f"Cycle {i + 1} outcome: {status}", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ERROR] Cycle {i + 1} raised unhandled exception: {exc}", file=sys.stderr, flush=True)
+            # Record but do not abort — next cycle may succeed
+            status = "error"
+
+        if i + 1 < cycles and not check_emergency_stop():
+            print(f"Waiting {interval} seconds before next cycle...", flush=True)
             time.sleep(interval)
 
     return 0
