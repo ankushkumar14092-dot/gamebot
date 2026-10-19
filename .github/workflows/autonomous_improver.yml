@@ -143,7 +143,9 @@ jobs:
 
       - name: Commit and Push Validated State to GitHub
         run: |
-          git add best_version_registry.json matches/ dist/
+          git add best_version_registry.json
+          git add bots/submission-v6/ || true
+          if [ -d dist ]; then git add dist/ || true; fi
           if git diff --staged --quiet; then
             echo "No state changes to commit."
           else

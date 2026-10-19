@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -58,7 +59,7 @@ class GitHubWorkflow:
             "tests/test_agent_reports.py",
         ]
         test_res = subprocess.run(
-            [str(self.root / ".venv" / "bin" / "python"), "-m", "unittest"] + test_files,
+            [sys.executable, "-m", "unittest"] + test_files,
             cwd=str(self.root),
             capture_output=True,
             text=True,

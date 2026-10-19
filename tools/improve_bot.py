@@ -456,7 +456,10 @@ def main() -> int:
         if args.run:
             cambc = root / ".venv" / "bin" / "cambc"
             if not cambc.exists():
-                raise ValueError(f"cambc command not found at {cambc}")
+                found = shutil.which("cambc")
+                if not found:
+                    raise ValueError(f"cambc command not found at {cambc} or in PATH")
+                cambc = Path(found)
             for project in (source, candidate):
                 # CAMBC's release build reuses the default build's project compile database.
                 subprocess.run([str(cambc), "build", str(project)], cwd=root, check=True)

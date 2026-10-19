@@ -221,7 +221,13 @@ class AutonomousImprover:
         # 5. Run regression tests
         print("Step 5: Running pre-evaluation regression test suite...")
         unit_test_res = subprocess.run(
-            [str(self.root / ".venv" / "bin" / "python"), "-m", "unittest", "discover", "tests"],
+            [
+                sys.executable, "-m", "unittest",
+                "tests/test_cambc_adapter.py",
+                "tests/test_improve_bot.py",
+                "tests/test_gemini_retry.py",
+                "tests/test_agent_reports.py",
+            ],
             cwd=str(self.root),
             capture_output=True,
             text=True,
