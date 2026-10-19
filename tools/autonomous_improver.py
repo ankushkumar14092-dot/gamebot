@@ -31,7 +31,7 @@ class AutonomousImprover:
     def __init__(
         self,
         root: Path = ROOT,
-        incumbent_dir: str | Path = "bots/submission-v6",
+        incumbent_dir: str | Path = "bots/submission-v9",
         opponent_dir: str | Path = "bots/baseline-cpp",
         adapter: CambcAdapter | None = None,
         registry: BestVersionRegistry | None = None,
@@ -40,7 +40,12 @@ class AutonomousImprover:
         allow_live_submission: bool = False,
     ):
         self.root = Path(root).resolve()
-        self.incumbent_dir = (self.root / incumbent_dir).resolve() if not Path(incumbent_dir).is_absolute() else Path(incumbent_dir)
+        incumbent_path = Path(incumbent_dir)
+        if not incumbent_path.is_absolute():
+            incumbent_path = self.root / incumbent_path
+        if not incumbent_path.exists() and (self.root / "bots" / "submission-v6").exists():
+            incumbent_path = self.root / "bots" / "submission-v6"
+        self.incumbent_dir = incumbent_path.resolve()
         self.opponent_dir = (self.root / opponent_dir).resolve() if not Path(opponent_dir).is_absolute() else Path(opponent_dir)
         self.adapter = adapter or CambcAdapter(root=self.root)
         self.registry = registry or BestVersionRegistry(self.root / "best_version_registry.json")

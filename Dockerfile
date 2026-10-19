@@ -21,6 +21,7 @@ COPY --chown=cambc:cambc cambc.toml ./cambc.toml
 COPY --chown=cambc:cambc best_version_registry.json* ./
 COPY --chown=cambc:cambc tools/ ./tools/
 COPY --chown=cambc:cambc bots/submission-v6/ ./bots/submission-v6/
+COPY --chown=cambc:cambc bots/submission-v9/ ./bots/submission-v9/
 COPY --chown=cambc:cambc bots/baseline-cpp/ ./bots/baseline-cpp/
 COPY --chown=cambc:cambc maps/ ./maps/
 COPY --chown=cambc:cambc sdk/ ./sdk/
