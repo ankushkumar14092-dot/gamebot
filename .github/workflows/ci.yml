@@ -23,9 +23,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
 
       - name: Install CAMBC CLI
-        run: python -m pip install --upgrade pip cambc==2.2.3
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
 
       - name: Configure Git identity (required by candidate branch tests)
         run: |
@@ -59,6 +61,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
 
       - name: Cache CAMBC toolchain
         uses: actions/cache@v4
@@ -68,7 +72,8 @@ jobs:
 
       - name: Install CAMBC CLI
         run: |
-          python -m pip install --upgrade pip cambc==2.2.3
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
           git config --global user.name "CI Agent"
           git config --global user.email "ci@localhost"
           git config --global init.defaultBranch main

@@ -61,20 +61,21 @@ jobs:
         with:
           python-version: '3.13'
           cache: 'pip'
+          cache-dependency-path: requirements.txt
 
       - name: Cache CAMBC toolchain (wasi-sdk, cmake, ninja)
         uses: actions/cache@v4
         id: cambc-cache
         with:
           path: ~/.cache/cambc
-          key: cambc-toolchain-v2.2.5-${{ runner.os }}-${{ runner.arch }}
+          key: cambc-toolchain-v2.2.3-${{ runner.os }}-${{ runner.arch }}
           restore-keys: |
-            cambc-toolchain-v2.2.5-${{ runner.os }}-
+            cambc-toolchain-v2.2.3-${{ runner.os }}-
 
       - name: Install CAMBC CLI and dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install cambc==2.2.3
+          python -m pip install -r requirements.txt
 
       - name: Verify Cloud Environment and CAMBC Toolchain
         run: |

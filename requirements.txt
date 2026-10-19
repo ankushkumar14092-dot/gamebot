@@ -1,0 +1,2 @@
+# Runtime dependencies for the autonomous CAMBC bot improvement agent
+cambc==2.2.3
