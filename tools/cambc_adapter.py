@@ -16,6 +16,34 @@ from typing import Sequence
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _is_executable_on_platform(path: Path) -> bool:
+    """Return True if *path* is a native binary for the current OS/arch.
+
+    Reads the ELF/Mach-O magic bytes to detect cross-platform binaries (e.g. a
+    macOS arm64 binary mounted inside a Linux container) before attempting to
+    execute them, avoiding "Exec format error" (errno 8) at runtime.
+    """
+    try:
+        with path.open("rb") as fh:
+            magic = fh.read(4)
+        # ELF — Linux / most Unix
+        if magic == b"\x7fELF":
+            import platform
+            return platform.system() == "Linux"
+        # Mach-O — macOS (fat: 0xcafebabe, 64-bit: 0xfeedfacf / 0xcefaedfe)
+        if magic[:2] in (b"\xfe\xed", b"\xce\xfa", b"\xcf\xfa", b"\xca\xfe"):
+            import platform
+            return platform.system() == "Darwin"
+        # PE — Windows
+        if magic[:2] == b"MZ":
+            import platform
+            return platform.system() == "Windows"
+        # Unknown / script — let the OS decide
+        return os.access(path, os.X_OK)
+    except OSError:
+        return False
+
+
 @dataclass(frozen=True)
 class CommandResult:
     command: tuple[str, ...]
@@ -31,7 +59,13 @@ class CambcAdapter:
     def __init__(self, root: Path = ROOT, timeout_seconds: int = 300):
         self.root = root.resolve()
         local_cli = self.root / ".venv" / "bin" / "cambc"
-        cli = local_cli if local_cli.is_file() else shutil.which("cambc")
+        # Only prefer the local venv binary if it is actually executable on this
+        # platform.  On Linux CI the .venv/ folder may contain a macOS binary
+        # (mounted from a Mac host volume) which raises "Exec format error".
+        if local_cli.is_file() and _is_executable_on_platform(local_cli):
+            cli: str | None = str(local_cli)
+        else:
+            cli = shutil.which("cambc")
         if not cli:
             raise FileNotFoundError("CAMBC CLI not found in .venv/bin or PATH")
         if timeout_seconds < 1:
